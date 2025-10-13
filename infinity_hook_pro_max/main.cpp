@@ -666,20 +666,38 @@ BOOL __fastcall DetourNtGdiBitBlt(HDC hdcDest, INT xDest, INT yDest, INT cxDest,
 	if (ExGetPreviousMode() == KernelMode) return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
 	if (PsGetProcessSessionId(IoGetCurrentProcess()) == 0) return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
 
+	// Get process information
+	PEPROCESS current_process = IoGetCurrentProcess();
+	char* process_name = PsGetProcessImageFileName(current_process);
+	HANDLE currentProcessId = PsGetCurrentProcessId();
+	
+	// Skip critical system processes that might cause BSOD
+	if (process_name != NULL) {
+		// Skip Windows system processes
+		if (_stricmp(process_name, "csrss.exe") == 0 ||
+			_stricmp(process_name, "winlogon.exe") == 0 ||
+			_stricmp(process_name, "services.exe") == 0 ||
+			_stricmp(process_name, "lsass.exe") == 0 ||
+			_stricmp(process_name, "smss.exe") == 0 ||
+			_stricmp(process_name, "wininit.exe") == 0 ||
+			_stricmp(process_name, "dwm.exe") == 0 ||
+			_stricmp(process_name, "explorer.exe") == 0 ||
+			_stricmp(process_name, "system") == 0 ||
+			_stricmp(process_name, "svchost.exe") == 0 ||
+			_stricmp(process_name, "win32k.sys") == 0 ||
+			_stricmp(process_name, "win32kbase.sys") == 0 ||
+			_stricmp(process_name, "win32kfull.sys") == 0) {
+			return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
+		}
+	}
+
 	kprintf("[+] NtGdiBitBlt: Successfully hooked \n");
 	kprintf("[+] NtGdiBitBlt: hdcDest %p \n", hdcDest);
 	kprintf("[+] NtGdiBitBlt: xDest %i, yDest %i, cxDest %i, cyDest %i \n", xDest, yDest, cxDest, cyDest);
 	kprintf("[+] NtGdiBitBlt: hdcSrc %p \n", hdcSrc);
 	kprintf("[+] NtGdiBitBlt: xSrc %i, ySrc %i \n", xSrc, ySrc);
 	kprintf("[+] NtGdiBitBlt: dwRop 0x%08X \n", dwRop);
-	
-	// Get the current process ID
-	HANDLE currentProcessId = PsGetCurrentProcessId();
 	kprintf("[+] NtGdiBitBlt: Process ID %p \n", currentProcessId);
-	
-	// Get process name
-	PEPROCESS current_process = IoGetCurrentProcess();
-	char* process_name = PsGetProcessImageFileName(current_process);
 	kprintf("[+] NtGdiBitBlt: Process %s \n", process_name);
 	
 	// Call the original function
