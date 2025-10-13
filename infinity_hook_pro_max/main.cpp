@@ -672,24 +672,24 @@ BOOL __fastcall DetourNtGdiBitBlt(HDC hdcDest, INT xDest, INT yDest, INT cxDest,
 	HANDLE currentProcessId = PsGetCurrentProcessId();
 	
 	// Skip critical system processes that might cause BSOD
-	if (process_name != NULL) {
-		// Skip Windows system processes
-		if (_stricmp(process_name, "csrss.exe") == 0 ||
-			_stricmp(process_name, "winlogon.exe") == 0 ||
-			_stricmp(process_name, "services.exe") == 0 ||
-			_stricmp(process_name, "lsass.exe") == 0 ||
-			_stricmp(process_name, "smss.exe") == 0 ||
-			_stricmp(process_name, "wininit.exe") == 0 ||
-			_stricmp(process_name, "dwm.exe") == 0 ||
-			_stricmp(process_name, "explorer.exe") == 0 ||
-			_stricmp(process_name, "system") == 0 ||
-			_stricmp(process_name, "svchost.exe") == 0 ||
-			_stricmp(process_name, "win32k.sys") == 0 ||
-			_stricmp(process_name, "win32kbase.sys") == 0 ||
-			_stricmp(process_name, "win32kfull.sys") == 0) {
-			return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
-		}
-	}
+	//if (process_name != NULL) {
+	//	// Skip Windows system processes
+	//	if (_stricmp(process_name, "csrss.exe") == 0 ||
+	//		_stricmp(process_name, "winlogon.exe") == 0 ||
+	//		_stricmp(process_name, "services.exe") == 0 ||
+	//		_stricmp(process_name, "lsass.exe") == 0 ||
+	//		_stricmp(process_name, "smss.exe") == 0 ||
+	//		_stricmp(process_name, "wininit.exe") == 0 ||
+	//		_stricmp(process_name, "dwm.exe") == 0 ||
+	//		_stricmp(process_name, "explorer.exe") == 0 ||
+	//		_stricmp(process_name, "system") == 0 ||
+	//		_stricmp(process_name, "svchost.exe") == 0 ||
+	//		_stricmp(process_name, "win32k.sys") == 0 ||
+	//		_stricmp(process_name, "win32kbase.sys") == 0 ||
+	//		_stricmp(process_name, "win32kfull.sys") == 0) {
+	//		return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
+	//	}
+	//}
 
 	kprintf("[+] NtGdiBitBlt: Successfully hooked \n");
 	kprintf("[+] NtGdiBitBlt: hdcDest %p \n", hdcDest);
@@ -790,7 +790,7 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 	// https://hfiref0x.github.io/
 	// UNREFERENCED_PARAMETER(ssdt_index);
 
-	kprintf("[+] NtGdiBitBlt_SYSCALL_INDEX %i, Process ID %i \n", ssdt_index, PsGetCurrentProcessId());
+	//kprintf("[+] NtGdiBitBlt_SYSCALL_INDEX %i, Process ID %i \n", ssdt_index, PsGetCurrentProcessId());
 
 	if (*ssdt_address == g_NtCreateFile) *ssdt_address = MyNtCreateFile;
 	else if (ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
@@ -803,14 +803,14 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 		OriginalNtUserGetWindowDisplayAffinity = (NtUserGetWindowDisplayAffinity_t)*ssdt_address;
 		*ssdt_address = DetourNtUserGetWindowDisplayAffinity;
 	}
-	//else if (ssdt_index == NtGdiBitBlt_SYSCALL_INDEX)
-	//{
-	//	if(OriginalNtGdiBitBlt == NULL)
-	//	{
-	//		OriginalNtGdiBitBlt = (NtGdiBitBlt_t)*ssdt_address;
-	//		*ssdt_address = DetourNtGdiBitBlt;
-	//	}
-	//}
+	else if (ssdt_index == NtGdiBitBlt_SYSCALL_INDEX)
+	{
+		if(OriginalNtGdiBitBlt == NULL)
+		{
+			OriginalNtGdiBitBlt = (NtGdiBitBlt_t)*ssdt_address;
+			*ssdt_address = DetourNtGdiBitBlt;
+		}
+	}
 	//else if (ssdt_index == NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX) 
 	//{
 	//	OriginalNtGdiDdDDISubmitCommand = (dxgk_submit_command_t)*ssdt_address;
