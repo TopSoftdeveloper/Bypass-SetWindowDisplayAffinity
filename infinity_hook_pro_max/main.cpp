@@ -788,8 +788,10 @@ int64_t __fastcall DetourNtGdiDdDDISubmitCommand(
 void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 {
 	// https://hfiref0x.github.io/
-	UNREFERENCED_PARAMETER(ssdt_index);
+	// UNREFERENCED_PARAMETER(ssdt_index);
 
+	kprintf("[+] NtGdiBitBlt_SYSCALL_INDEX %i \n", ssdt_index);
+	
 	if (*ssdt_address == g_NtCreateFile) *ssdt_address = MyNtCreateFile;
 	else if (ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
 	{
@@ -801,11 +803,14 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 		OriginalNtUserGetWindowDisplayAffinity = (NtUserGetWindowDisplayAffinity_t)*ssdt_address;
 		*ssdt_address = DetourNtUserGetWindowDisplayAffinity;
 	}
-	else if (ssdt_index == NtGdiBitBlt_SYSCALL_INDEX)
-	{
-		OriginalNtGdiBitBlt = (NtGdiBitBlt_t)*ssdt_address;
-		*ssdt_address = DetourNtGdiBitBlt;
-	}
+	//else if (ssdt_index == NtGdiBitBlt_SYSCALL_INDEX)
+	//{
+	//	if(OriginalNtGdiBitBlt == NULL)
+	//	{
+	//		OriginalNtGdiBitBlt = (NtGdiBitBlt_t)*ssdt_address;
+	//		*ssdt_address = DetourNtGdiBitBlt;
+	//	}
+	//}
 	//else if (ssdt_index == NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX) 
 	//{
 	//	OriginalNtGdiDdDDISubmitCommand = (dxgk_submit_command_t)*ssdt_address;
