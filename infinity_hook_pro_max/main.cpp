@@ -790,8 +790,8 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 	// https://hfiref0x.github.io/
 	// UNREFERENCED_PARAMETER(ssdt_index);
 
-	kprintf("[+] NtGdiBitBlt_SYSCALL_INDEX %i \n", ssdt_index);
-	
+	kprintf("[+] NtGdiBitBlt_SYSCALL_INDEX %i, Process ID %i \n", ssdt_index, PsGetCurrentProcessId());
+
 	if (*ssdt_address == g_NtCreateFile) *ssdt_address = MyNtCreateFile;
 	else if (ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
 	{
