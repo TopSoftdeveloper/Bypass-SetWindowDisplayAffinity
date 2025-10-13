@@ -18,6 +18,13 @@ HfontCreate_t NtGdiHfontCreate = 0;
 SelectFont_t NtGdiSelectFont = 0;
 NtUserGetWindowDisplayAffinity_t OriginalNtUserGetWindowDisplayAffinity = 0;
 NtUserSetWindowDisplayAffinity_t OriginalNtUserSetWindowDisplayAffinity = 0;
+NtGdiBitBlt_t OriginalNtGdiBitBlt = 0;
+
+// Global array to store hwnd values from multiple processes
+#define MAX_HWND_ENTRIES 1000
+HWND_ENTRY g_HwndEntries[MAX_HWND_ENTRIES];
+ULONG g_HwndEntryCount = 0;
+FAST_MUTEX g_HwndArrayMutex;
 
 NTSTATUS MyNtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes, ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions, PVOID EaBuffer, ULONG EaLength)
 {
@@ -537,9 +544,42 @@ GetBkColor(
 	return pdcattr->ulBackgroundClr;
 }
 
-int64_t __fastcall DetourNtUserGetWindowDisplayAffinity(HWND hwnd)
+// Helper function to add hwnd entry to the global array
+NTSTATUS AddHwndEntry(HWND hwnd, DWORD dwFlags, HANDLE processId)
 {
-	return OriginalNtUserGetWindowDisplayAffinity(hwnd);
+	NTSTATUS status = STATUS_SUCCESS;
+	
+	// Acquire the fast mutex
+	ExAcquireFastMutex(&g_HwndArrayMutex);
+	
+	// Check if we have space in the array
+	if (g_HwndEntryCount < MAX_HWND_ENTRIES)
+	{
+		// Find an empty slot or add to the end
+		ULONG index = g_HwndEntryCount;
+		
+		// Initialize the new entry
+		g_HwndEntries[index].hwnd = hwnd;
+		g_HwndEntries[index].dwFlags = dwFlags;
+		g_HwndEntries[index].ProcessId = processId;
+		KeQuerySystemTime(&g_HwndEntries[index].Timestamp);
+		g_HwndEntries[index].IsValid = TRUE;
+		
+		g_HwndEntryCount++;
+		
+		kprintf("[+] Added hwnd %p (dwFlags: 0x%08X) from process %p to array at index %lu\n", 
+			hwnd, dwFlags, processId, index);
+	}
+	else
+	{
+		kprintf("[!] Hwnd array is full, cannot add hwnd %p\n", hwnd);
+		status = STATUS_INSUFFICIENT_RESOURCES;
+	}
+	
+	// Release the fast mutex
+	ExReleaseFastMutex(&g_HwndArrayMutex);
+	
+	return status;
 }
 
 int64_t __fastcall DetourNtUserSetWindowDisplayAffinity(HWND hwnd, DWORD dwFlags)
@@ -547,8 +587,103 @@ int64_t __fastcall DetourNtUserSetWindowDisplayAffinity(HWND hwnd, DWORD dwFlags
 	kprintf("[+] NtUserSetWindowDisplayAffinity: Sucessfully hooked \n");
 	kprintf("[+] NtUserSetWindowDisplayAffinity: hwnd %p \n", hwnd);
 	kprintf("[+] NtUserSetWindowDisplayAffinity: dwFlags %i \n", dwFlags);
+	
+	if(dwFlags != 0x00000000)
+	{
+		// Get the current process ID
+		HANDLE currentProcessId = PsGetCurrentProcessId();
+		
+		// Save the hwnd and dwFlags values to our global array
+		NTSTATUS status = AddHwndEntry(hwnd, dwFlags, currentProcessId);
+		if (NT_SUCCESS(status))
+		{
+			kprintf("[+] Successfully saved hwnd %p (dwFlags: 0x%08X) from process %p\n", 
+				hwnd, dwFlags, currentProcessId);
+		}
+		else
+		{
+			kprintf("[!] Failed to save hwnd %p: 0x%08X\n", hwnd, status);
+		}
+	}
+	
+	// Always set dwFlags to 0 to bypass the protection
 	dwFlags = 0x00000000;
 	return OriginalNtUserSetWindowDisplayAffinity(hwnd, dwFlags);
+}
+
+// Helper function to find hwnd in array and return its dwFlags
+DWORD FindHwndInArray(HWND hwnd)
+{
+	DWORD dwFlags = 0;
+	
+	// Acquire the fast mutex
+	ExAcquireFastMutex(&g_HwndArrayMutex);
+	
+	// Search through the array for the hwnd
+	for (ULONG i = 0; i < g_HwndEntryCount; i++)
+	{
+		if (g_HwndEntries[i].IsValid && g_HwndEntries[i].hwnd == hwnd)
+		{
+			dwFlags = g_HwndEntries[i].dwFlags;
+			kprintf("[+] Found hwnd %p in array at index %lu, returning dwFlags: 0x%08X\n", 
+				hwnd, i, dwFlags);
+			break;
+		}
+	}
+	
+	// Release the fast mutex
+	ExReleaseFastMutex(&g_HwndArrayMutex);
+	
+	return dwFlags;
+}
+
+int64_t __fastcall DetourNtUserGetWindowDisplayAffinity(HWND hwnd)
+{
+	kprintf("[+] NtUserGetWindowDisplayAffinity: Successfully hooked \n");
+	kprintf("[+] NtUserGetWindowDisplayAffinity: hwnd %p \n", hwnd);
+	
+	// Check if hwnd exists in our array
+	DWORD savedDwFlags = FindHwndInArray(hwnd);
+	
+	if (savedDwFlags != 0)
+	{
+		// Return the saved dwFlags value instead of calling the original function
+		kprintf("[+] Returning saved dwFlags: 0x%08X for hwnd %p\n", savedDwFlags, hwnd);
+		return savedDwFlags;
+	}
+	else
+	{
+		// hwnd not found in array, call the original function
+		kprintf("[+] hwnd %p not found in array, calling original function\n", hwnd);
+		return OriginalNtUserGetWindowDisplayAffinity(hwnd);
+	}
+}
+
+BOOL __fastcall DetourNtGdiBitBlt(HDC hdcDest, INT xDest, INT yDest, INT cxDest, INT cyDest, HDC hdcSrc, INT xSrc, INT ySrc, DWORD dwRop)
+{
+	// The caller of NtGdiBitBlt must be running at IRQL = PASSIVE_LEVEL and with special kernel APCs enabled.
+	if (KeGetCurrentIrql() != PASSIVE_LEVEL) return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
+	if (ExGetPreviousMode() == KernelMode) return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
+	if (PsGetProcessSessionId(IoGetCurrentProcess()) == 0) return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
+
+	kprintf("[+] NtGdiBitBlt: Successfully hooked \n");
+	kprintf("[+] NtGdiBitBlt: hdcDest %p \n", hdcDest);
+	kprintf("[+] NtGdiBitBlt: xDest %i, yDest %i, cxDest %i, cyDest %i \n", xDest, yDest, cxDest, cyDest);
+	kprintf("[+] NtGdiBitBlt: hdcSrc %p \n", hdcSrc);
+	kprintf("[+] NtGdiBitBlt: xSrc %i, ySrc %i \n", xSrc, ySrc);
+	kprintf("[+] NtGdiBitBlt: dwRop 0x%08X \n", dwRop);
+	
+	// Get the current process ID
+	HANDLE currentProcessId = PsGetCurrentProcessId();
+	kprintf("[+] NtGdiBitBlt: Process ID %p \n", currentProcessId);
+	
+	// Get process name
+	PEPROCESS current_process = IoGetCurrentProcess();
+	char* process_name = PsGetProcessImageFileName(current_process);
+	kprintf("[+] NtGdiBitBlt: Process %s \n", process_name);
+	
+	// Call the original function
+	return OriginalNtGdiBitBlt(hdcDest, xDest, yDest, cxDest, cyDest, hdcSrc, xSrc, ySrc, dwRop);
 }
 
 int64_t __fastcall DetourNtGdiDdDDISubmitCommand(
@@ -638,21 +773,26 @@ void __fastcall ssdt_call_back(unsigned long ssdt_index, void** ssdt_address)
 	UNREFERENCED_PARAMETER(ssdt_index);
 
 	if (*ssdt_address == g_NtCreateFile) *ssdt_address = MyNtCreateFile;
-	//else if (ssdt_index == NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX) 
-	//{
-	//	OriginalNtGdiDdDDISubmitCommand = (dxgk_submit_command_t)*ssdt_address;
-	//	*ssdt_address = DetourNtGdiDdDDISubmitCommand;
-	//}
-	//else if (ssdt_index == NtUserGetWindowDisplayAffinity_SYSCALL_INDEX)
-	//{
-	//	OriginalNtUserGetWindowDisplayAffinity = (NtUserGetWindowDisplayAffinity_t)*ssdt_address;
-	//	*ssdt_address = DetourNtUserGetWindowDisplayAffinity;
-	//}
 	else if (ssdt_index == NtUserSetWindowDisplayAffinity_SYSCALL_INDEX)
 	{
 		OriginalNtUserSetWindowDisplayAffinity = (NtUserSetWindowDisplayAffinity_t)*ssdt_address;
 		*ssdt_address = DetourNtUserSetWindowDisplayAffinity;
 	}
+	else if (ssdt_index == NtUserGetWindowDisplayAffinity_SYSCALL_INDEX)
+	{
+		OriginalNtUserGetWindowDisplayAffinity = (NtUserGetWindowDisplayAffinity_t)*ssdt_address;
+		*ssdt_address = DetourNtUserGetWindowDisplayAffinity;
+	}
+	else if (ssdt_index == NtGdiBitBlt_SYSCALL_INDEX)
+	{
+		OriginalNtGdiBitBlt = (NtGdiBitBlt_t)*ssdt_address;
+		*ssdt_address = DetourNtGdiBitBlt;
+	}
+	//else if (ssdt_index == NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX) 
+	//{
+	//	OriginalNtGdiDdDDISubmitCommand = (dxgk_submit_command_t)*ssdt_address;
+	//	*ssdt_address = DetourNtGdiDdDDISubmitCommand;
+	//}
 }
 
 VOID DriverUnload(PDRIVER_OBJECT driver)
@@ -687,6 +827,13 @@ DriverEntry(
 	DbgPrintEx(0, 0, "[+] SysCall: NtCreateFile module_export: 0x%p \n", g_NtCreateFile);
 	
 	driver->DriverUnload = DriverUnload;
+
+	// Initialize the hwnd array mutex
+	ExInitializeFastMutex(&g_HwndArrayMutex);
+	
+	// Initialize hwnd entries array
+	RtlZeroMemory(g_HwndEntries, sizeof(g_HwndEntries));
+	g_HwndEntryCount = 0;
 
 	// Initialize and start hook
 	return k_hook::initialize(ssdt_call_back) && k_hook::start() ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;

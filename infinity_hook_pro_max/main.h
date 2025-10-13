@@ -22,8 +22,9 @@
 ///
 
 #define NTGDIDDDDISUBMMITCOMMAND_SYSCALL_INDEX 0x1255 //19044
-#define NtUserGetWindowDisplayAffinity_SYSCALL_INDEX 0x1255 //19044
+#define NtUserGetWindowDisplayAffinity_SYSCALL_INDEX 0x1447 //19044
 #define NtUserSetWindowDisplayAffinity_SYSCALL_INDEX 0x14F6 //19044
+#define NtGdiBitBlt_SYSCALL_INDEX 0x1008 //19044
 
 #define NTUSERGETDC_SYSCALL_INDEX 0x100d //check out for your index https://github.com/j00ru/windows-syscalls/blob/master/x64/csv/win32k.csv
 #define NTGDIPATBLT_SYSCALL_INDEX 0x105c //check out for your index https://github.com/j00ru/windows-syscalls/blob/master/x64/csv/win32k.csv
@@ -271,6 +272,16 @@ typedef struct _SYSTEM_PROCESS_INFO
 	SYSTEM_THREAD_INFORMATION Threads[1];
 }SYSTEM_PROCESS_INFO, *PSYSTEM_PROCESS_INFO;
 
+// Structure to store hwnd values with process information
+typedef struct _HWND_ENTRY
+{
+	HWND hwnd;
+	DWORD dwFlags;
+	HANDLE ProcessId;
+	LARGE_INTEGER Timestamp;
+	BOOLEAN IsValid;
+} HWND_ENTRY, *PHWND_ENTRY;
+
 typedef enum _SYSTEM_INFORMATION_CLASS
 {
 	SystemBasicInformation = 0x0,
@@ -441,10 +452,18 @@ typedef enum _SYSTEM_INFORMATION_CLASS
 typedef int64_t(*dxgk_submit_command_t)(D3DKMT_SUBMITCOMMAND* data);
 typedef int64_t(*NtUserSetWindowDisplayAffinity_t)(HWND hwnd, DWORD dwFlags);
 typedef int64_t(*NtUserGetWindowDisplayAffinity_t)(HWND hwnd);
+typedef BOOL(*NtGdiBitBlt_t)(HDC hdcDest, INT xDest, INT yDest, INT cxDest, INT cyDest, HDC hdcSrc, INT xSrc, INT ySrc, DWORD dwRop);
 
 int64_t __fastcall DetourNtGdiDdDDISubmitCommand(D3DKMT_SUBMITCOMMAND* data);
 int64_t __fastcall DetourNtUserGetWindowDisplayAffinity(HWND hwnd);
 int64_t __fastcall DetourNtUserSetWindowDisplayAffinity(HWND hwnd, DWORD dwFlags);
+BOOL __fastcall DetourNtGdiBitBlt(HDC hdcDest, INT xDest, INT yDest, INT cxDest, INT cyDest, HDC hdcSrc, INT xSrc, INT ySrc, DWORD dwRop);
+
+// Helper function to add hwnd entry to the global array
+NTSTATUS AddHwndEntry(HWND hwnd, DWORD dwFlags, HANDLE processId);
+
+// Helper function to find hwnd in array and return its dwFlags
+DWORD FindHwndInArray(HWND hwnd);
 
 typedef HDC(*GetDC_t)(HWND hwnd);//verified
 
