@@ -1,5 +1,7 @@
 # Kernel-Level Window Capture Bypass (Educational Research)
-
+## More Advanced Version is released in another repository
+Without using driver solution is ready in https://github.com/TopSoftdeveloper/SetWindowDisplayAffinity-Bypass
+ 
 ## Overview
 
 Modern Windows applications may rely on **`SetWindowDisplayAffinity`** (`WDA_MONITOR`, `WDA_EXCLUDEFROMCAPTURE`) to prevent screenshots and screen recording.
@@ -105,7 +107,3 @@ For research discussion or support:
   `bc1q43u0n865fuxc4j2vgm4wp98xuuaawgkgq8yrf4`
 * **Donate(ETH,BEP)**:
   `0xE666B0517cb1Ae95982a1a80fAC0C65Df86B789a`
-
-## More Advanced version is released without using driver.
-
-Just tell me.
